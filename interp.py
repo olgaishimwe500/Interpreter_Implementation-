@@ -4,7 +4,8 @@ from dataclasses import dataclass
 import csv
 import os
 
-type Expr = Lit | Add | Sub | Mul | Div | Neg | And | Or | Not | Eq | Lt | If | Name| Let | TableLit | SelectExpr | JoinExpr
+
+type Expr = Lit | Add | Sub | Mul | Div | Neg | And | Or | Not | Eq | Lt | If | Name| Let | Letfun | App | TableLit | SelectExpr | JoinExpr
 
 @dataclass
 class Lit():
@@ -101,7 +102,24 @@ class Let():
     body: Expr
     def __str__(self):
         return f"(Let {self.var} = {self.expr} in {self.body})"
+
+@dataclass
+class Letfun():
+    name: str
+    param: str
+    body: Expr
+    expr: Expr
+    def __str__(self):
+        return f"(letfun {self.name} {self.param} = {self.body} in {self.expr})"
     
+@dataclass
+class App():
+    func: Expr
+    arg: Expr
+    def __str__(self):
+        return f"({self.func} {self.arg})"
+
+
 # my relation schemas, where i will select join tables
 @dataclass
 class TableLit():
@@ -123,7 +141,8 @@ class JoinExpr():
     column: str
     def __str__(self):
         return f"(JOIN {self.left} AND {self.right} ON {self.column})"
-    
+
+
 
 # eval methords, settting up the environment
 
@@ -167,7 +186,15 @@ class Table():
         data_rows = [" | ".join(str(row[col]).ljust(col_widths[col]) for col in self.columns) for row in self.rows]
         
         return "\n".join([header, divider] + data_rows)
-    
+
+@dataclass
+class Closure():
+    param: str
+    body: Expr
+    env: any
+    def __str__(self):
+        return f"<function>"
+
 # evaluation stars here
 def eval(e: Expr) -> Any:
     return evalInEnv(emptyEnv, e)
@@ -291,7 +318,20 @@ def evalInEnv(env: Env[Any], e: Expr) -> Any:
             newEnv = extendEnv(var, v, env)
             return evalInEnv(newEnv, body)
 
+        case Letfun(name, param, body, expr):
+            closure = Closure(param, body, env)
+            newEnv = extendEnv(name, closure, env)
+            return evalInEnv(newEnv, expr)
         
+        case App(func, arg):
+            match evalInEnv(env, func):
+                case Closure(param, body, closureEnv):
+                    argVal = evalInEnv(env, arg)
+                    newEnv = extendEnv(param, argVal, closureEnv)
+                    return evalInEnv(newEnv, body)
+                case _:
+                    raise EvalError("application of a non function")
+
         case TableLit(filename):
             if not os.path.exists(filename):
                 raise EvalError(f"file not found: '{filename}'")
@@ -366,33 +406,33 @@ def run(e: Expr) -> None:
         print(f"Error: {err}")
 
 
+if __name__ == '__main__':
+    # additional testing specifically for my schemas.
+    # Test 1: load a table from a csv file
+    run(TableLit("students.csv"))
 
-# additional testing specifically for my schemas.
-# Test 1: load a table from a csv file
-run(TableLit("students.csv"))
+    # Test 2: select specific columns from a table
+    run(SelectExpr(["name", "gpa"], TableLit("students.csv")))
 
-# Test 2: select specific columns from a table
-run(SelectExpr(["name", "gpa"], TableLit("students.csv")))
+    # Test 3: join two tables on a shared column
+    run(JoinExpr(TableLit("students.csv"), TableLit("classes.csv"), "id"))
 
-# Test 3: join two tables on a shared column
-run(JoinExpr(TableLit("students.csv"), TableLit("classes.csv"), "id"))
-
-# Test 4: join then select 
-run(SelectExpr(["name", "course"],
+    # Test 4: join then select 
+    run(SelectExpr(["name", "course"],
         JoinExpr(TableLit("students.csv"),
                  TableLit("classes.csv"),
                  "id")))
 
-# Test 5: use let to bind a table to a variable and reuse it
-run(Let("students", TableLit("students.csv"),
+    # Test 5: use let to bind a table to a variable and reuse it
+    run(Let("students", TableLit("students.csv"),
         SelectExpr(["name", "gpa"], Name("students"))))
 
 
 # Test 9: equality comparison on tables
-run(Eq(TableLit("students.csv"), TableLit("students.csv")))
+    run(Eq(TableLit("students.csv"), TableLit("students.csv")))
 
-# Test 10: error handling — bad column name
-run(SelectExpr(["age"], TableLit("students.csv")))
+    # Test 10: error handling — bad column name
+    run(SelectExpr(["age"], TableLit("students.csv")))
 
 
 '''

@@ -1,0 +1,41 @@
+%import common.INT ->INT
+%import common.CNAME -> ID
+%import common.WS
+%import common.ESCAPED_STRING -> STRING
+
+%ignore WS
+
+?expr: expr "||" and_expr   -> or_op
+     | and_expr
+
+?and_expr: and_expr "&&" not_expr   -> and_op
+         | not_expr
+
+?not_expr: "!" not_expr     -> not_op
+         | cmp_expr
+
+?cmp_expr: cmp_expr "==" cmp_expr   -> eq
+         | cmp_expr "<" cmp_expr    -> lt
+         | add_expr
+
+?add_expr: add_expr "+" term        -> plus
+         | add_expr "-" term        -> minus
+         | term
+
+?term: term "*" factor      -> times
+     | term "/" factor      -> divide
+     | factor
+
+?factor: "-" factor     -> neg
+       | atom
+
+?atom: INT                                                -> int
+     | ID                                                 -> id
+     | "(" expr ")"
+     | "let" ID "=" expr "in" expr "end"                  ->let
+     | "letfun" ID ID "=" expr "in" expr "end"            ->letfun
+     | atom "(" expr")"                                   ->app
+     | "if" expr "then" expr "else" expr "end"            ->if_expr
+     | "select" "[" ID ("," ID)* "]" "from" expr "end"    ->select_expr
+     | "join" expr "and" expr "on" ID "end"               ->join_expr
+     | STRING                                             ->table_lit
